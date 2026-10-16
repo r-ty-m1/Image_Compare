@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>圖片比較</title>
+<title>圖片前後對比嵌入器</title>
 <style>
   :root {
     color-scheme: dark;
@@ -44,9 +44,14 @@
     background:var(--accent); color:var(--inverse); font-size:16px; font-weight:700; box-shadow:var(--accent-glow); }
 
   #prompts { display:flow-root; }
-  html.embed #prompts { max-height:38vh; overflow:auto; }
-  .prompt { margin-top:10px; padding:10px 12px; border-radius:8px; background:var(--s1); border:1px solid var(--line-subtle); font-size:13px; line-height:1.55; white-space:pre-wrap; overflow-wrap:anywhere; }
-  .prompt-label { font-size:12px; font-weight:600; color:var(--accent); margin-bottom:2px; }
+  .prompt { margin-top:8px; border-radius:8px; background:var(--s1); border:1px solid var(--line-subtle); font-size:13px; line-height:1.55; overflow:hidden; }
+  .prompt summary { display:flex; align-items:center; gap:8px; padding:8px 12px; cursor:pointer; list-style:none; font-size:12px; font-weight:600; color:var(--accent); user-select:none; }
+  .prompt summary::-webkit-details-marker { display:none; }
+  .prompt summary::before { content:"▸"; display:inline-block; font-size:11px; transition:transform .15s; }
+  .prompt[open] summary::before { transform:rotate(90deg); }
+  .prompt summary:hover { background:rgba(255,255,255,.04); }
+  .prompt summary:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+  .prompt-body { padding:0 12px 10px 31px; white-space:pre-wrap; overflow-wrap:anywhere; max-height:30vh; overflow:auto; }
 
   .toolbar { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin:10px 0; }
 
@@ -90,7 +95,7 @@
 </head>
 <body>
 <main class="app" id="app">
-  <header class="page-head" id="pageHead"><h1>圖片比較工具</h1><p>設定圖片、比例與提示詞，產生可嵌入 Notion 的連結</p></header>
+  <header class="page-head" id="pageHead"><h1>圖片前後對比嵌入器</h1><p>把兩張圖做成可拖曳的前後對比，一鍵取得 Notion 嵌入連結</p></header>
 
   <div class="viewer" id="viewer" aria-label="拖曳分隔線比較兩張圖片">
     <!-- 底層＝圖片 B（右側）；上層裁切＝圖片 A（左側），與標籤位置一致 -->
@@ -101,8 +106,8 @@
   </div>
 
   <section id="prompts">
-    <div class="prompt" id="promptA"><div class="prompt-label" id="promptLabelA">提示詞 A</div><div id="promptBodyA"></div></div>
-    <div class="prompt" id="promptB"><div class="prompt-label" id="promptLabelB">提示詞 B</div><div id="promptBodyB"></div></div>
+    <details class="prompt" id="promptA"><summary id="promptLabelA">Prompt(Before)</summary><div class="prompt-body" id="promptBodyA"></div></details>
+    <details class="prompt" id="promptB"><summary id="promptLabelB">Prompt(After)</summary><div class="prompt-body" id="promptBodyB"></div></details>
   </section>
 
   <div class="toolbar" id="toolbar" hidden><button id="editBtn" type="button">編輯設定</button></div>
@@ -112,7 +117,7 @@
     <div class="fields">
       <div class="field"><label for="urlA">圖片 A 網址（原圖／左側）</label><input id="urlA" type="url" placeholder="上傳後自動填入，或貼上 HTTPS 網址"></div>
       <div class="field"><label for="urlB">圖片 B 網址（結果／右側）</label><input id="urlB" type="url" placeholder="上傳後自動填入，或貼上 HTTPS 網址"></div>
-      <div class="field full"><label for="ratio">嵌入後圖片顯示比例（嵌入後固定，完整顯示不裁切）</label><select id="ratio"><option value="3:4">3:4（直式，適合目前圖片）</option><option value="4:5">4:5（直式）</option><option value="9:16">9:16（手機直式）</option><option value="1:1">1:1（正方形）</option><option value="4:3">4:3（橫式）</option><option value="16:9">16:9（寬螢幕）</option></select></div>
+      <div class="field full"><label for="ratio">嵌入後圖片顯示比例</label><select id="ratio"><option value="3:4">3:4（直式）</option><option value="4:5">4:5（直式）</option><option value="9:16">9:16（手機直式）</option><option value="1:1">1:1（正方形）</option><option value="4:3">4:3（橫式）</option><option value="16:9">16:9（寬螢幕）</option></select><div class="hint" id="ratioHint" style="margin:6px 0 0"></div></div>
       <div class="field"><label for="labelA">圖片 A 標籤</label><input id="labelA" type="text" value="Before" maxlength="40"></div>
       <div class="field"><label for="labelB">圖片 B 標籤</label><input id="labelB" type="text" value="After" maxlength="40"></div>
       <div class="field"><label for="promptTitleA">提示詞 A 標題</label><input id="promptTitleA" type="text" value="Prompt(Before)" maxlength="80"></div>
@@ -198,6 +203,40 @@
   loadGh();
   [...Object.values(GH_FIELDS), 'ghRemember'].forEach(id => { $(id).addEventListener('input', saveGh); $(id).addEventListener('change', saveGh); });
 
+  /* ---------- 自動選擇最接近的比例 ---------- */
+  let ratioTouched = params.has('r');        // 已有手動設定／既有連結的比例時，不會被自動偵測覆蓋
+  function pickRatio(w, h) {
+    if (!w || !h) return null;
+    const target = Math.log(w / h);
+    return RATIOS.reduce((best, r) => {
+      const [a, b] = r.split(':').map(Number);
+      return Math.abs(Math.log(a / b) - target) < Math.abs(Math.log(best.split(':')[0] / best.split(':')[1]) - target) ? r : best;
+    }, RATIOS[0]);
+  }
+  function autoRatio(w, h, source) {
+    const r = pickRatio(w, h); if (!r) return;
+    $('ratio').value = r;
+    $('ratioHint').textContent = `已依${source}（${w}×${h}）自動選擇最接近的比例 ${r}，可手動更改。`;
+    layout();
+  }
+  $('ratio').addEventListener('change', () => { ratioTouched = true; $('ratioHint').textContent = ''; });
+  function readFileSize(file) {
+    return new Promise(resolve => {
+      const url = URL.createObjectURL(file), im = new Image();
+      im.onload = () => { resolve([im.naturalWidth, im.naturalHeight]); URL.revokeObjectURL(url); };
+      im.onerror = () => { resolve([0, 0]); URL.revokeObjectURL(url); };
+      im.src = url;
+    });
+  }
+  $('fileA').addEventListener('change', async () => {      // 選好檔案就先依圖片 A 自動選比例
+    const f = $('fileA').files[0]; if (!f) return;
+    const [w, h] = await readFileSize(f); autoRatio(w, h, `圖片 A 檔案`); ratioTouched = false;
+  });
+  $('fileB').addEventListener('change', async () => {      // 只選 B 且沒有 A 時，才依 B 決定
+    const f = $('fileB').files[0]; if (!f || $('fileA').files[0] || $('urlA').value.trim()) return;
+    const [w, h] = await readFileSize(f); autoRatio(w, h, `圖片 B 檔案`); ratioTouched = false;
+  });
+
   /* ---------- 圖片與預覽 ---------- */
   function setImage(id, url, alt) {
     const img = $(id);
@@ -215,7 +254,9 @@
       img.hidden = true;
       $('error').textContent = '有圖片無法載入（網址已保留在欄位中）。請確認儲存庫是「公開」的、網址為 HTTPS，且檔案格式不是 SVG。';
     };
-    img.onload = () => { img.style.visibility = ''; if ($('error').textContent.startsWith('有圖片無法載入')) $('error').textContent = ''; };
+    img.onload = () => {
+      if (id === 'imgA' && configureMode && !ratioTouched) autoRatio(img.naturalWidth, img.naturalHeight, '圖片 A');
+      img.style.visibility = ''; if ($('error').textContent.startsWith('有圖片無法載入')) $('error').textContent = ''; };
     if (url) img.src = url; else img.removeAttribute('src');
   }
 
@@ -393,6 +434,7 @@
   $('viewer').addEventListener('pointermove', event => { if (dragging) setFromPointer(event); });
   const stopDragging = () => { dragging = false; };
   ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => $('viewer').addEventListener(t, stopDragging));
+  ['promptA', 'promptB'].forEach(id => $(id).addEventListener('toggle', layout));   // 展開／摺疊後重新計算，讓圖片仍完整放得下
   window.addEventListener('resize', layout);
   window.addEventListener('load', layout);
   apply();
