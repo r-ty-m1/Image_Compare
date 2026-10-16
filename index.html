@@ -5,66 +5,111 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>圖片比較</title>
 <style>
-  :root { color-scheme: light dark; --text: CanvasText; --muted: GrayText; --line: color-mix(in srgb, CanvasText 22%, transparent); --accent: GrayText; }
-  * { box-sizing: border-box; }
-  html, body { margin:0; padding:0; background:transparent !important; }
-  body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color:var(--text); }
-  .app { width:100%; margin:0; }
-  .viewer { position:relative; width:100%; aspect-ratio:3/4; overflow:hidden; user-select:none; -webkit-user-select:none; touch-action:pan-y; background:transparent; cursor:ew-resize; }
-  .viewer img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; pointer-events:none; -webkit-user-drag:none; user-drag:none; }
-  .viewer img[hidden] { display:none; }
-  .overlay { position:absolute; inset:0 auto 0 0; width:50%; overflow:hidden; border-right:1px solid #fff; }
-  .overlay img { width:100%; max-width:none; }
-  .tag { position:absolute; top:10px; z-index:2; padding:4px 7px; border-radius:4px; color:#fff; background:#0009; font-size:12px; line-height:1.4; pointer-events:none; }
+  :root {
+    color-scheme: dark;
+    --bg:#0c0d0f; --s1:#14161a; --s2:#1c1f26; --s3:#262a34;
+    --line-subtle:rgba(255,255,255,.08); --line:rgba(255,255,255,.14); --line-hi:rgba(0,255,102,.5);
+    --accent:#00ff66; --glow:rgba(0,255,102,.25); --glow-strong:rgba(0,255,102,.4);
+    --text:#f4f4f6; --muted:#8f96a3; --inverse:#0c0d0f; --error:#ff5252;
+    --card-shadow:0 8px 32px rgba(0,0,0,.45); --accent-glow:0 0 16px rgba(0,255,102,.35);
+    --font:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue","PingFang TC","Noto Sans TC",sans-serif;
+  }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  html, body { margin:0; padding:0; background:var(--bg); }
+  body { font-family:var(--font); font-size:14px; line-height:1.55; color:var(--text); padding:20px 16px 40px; overflow-x:hidden; }
+  html.embed body { padding:10px; }
+  .app { width:100%; max-width:980px; margin:0 auto; }
+  html.embed .app { max-width:none; }
+
+  .page-head { margin:0 0 16px; }
+  .page-head h1 { margin:0; font-size:20px; line-height:1.4; font-weight:600; }
+  .page-head p { margin:2px 0 0; font-size:12px; line-height:1.4; font-weight:500; color:var(--muted); }
+
+  /* 比較檢視器：尺寸由 layout() 依比例計算，永遠完整顯示、不裁切 */
+  .viewer { position:relative; margin:0 auto; width:100%; aspect-ratio:3/4; overflow:hidden; border-radius:14px; background:var(--s1);
+    box-shadow:0 0 0 1px var(--line-subtle), var(--card-shadow); user-select:none; -webkit-user-select:none; touch-action:pan-y; cursor:ew-resize; }
+  .viewer img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; pointer-events:none; -webkit-user-drag:none; }
+  .overlay { position:absolute; inset:0 auto 0 0; width:50%; overflow:hidden; }
+  .overlay img { max-width:none; }
+  .tag { position:absolute; top:10px; z-index:2; padding:3px 10px; border-radius:999px; color:var(--text); background:rgba(12,13,15,.62);
+    border:1px solid var(--line); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); font-size:12px; line-height:1.4; font-weight:500; pointer-events:none; }
   .tag.left { left:10px; } .tag.right { right:10px; }
   .handle { position:absolute; top:0; bottom:0; left:50%; width:0; z-index:3; pointer-events:none; }
-  .knob { position:absolute; top:50%; left:0; transform:translate(-50%,-50%); width:32px; height:32px; display:grid; place-items:center; border-radius:50%; background:#fff; color:#333; border:1px solid #bbb; box-shadow:0 1px 5px #0002; font-size:17px; }
-  .prompt { margin-top:10px; font-size:13px; line-height:1.55; white-space:pre-wrap; overflow-wrap:anywhere; }
-  .prompt:empty { display:none; }
-  .prompt-label { font-weight:650; margin-bottom:2px; }
-  .prompt-body { color:inherit; }
-  .toolbar { display:flex; justify-content:flex-end; gap:8px; margin:8px 0; }
-  button, input, textarea { font:inherit; }
-  button { cursor:pointer; border:1px solid var(--line); border-radius:6px; background:transparent; color:inherit; padding:6px 9px; font-size:13px; }
-  .editor { border:1px solid var(--line); border-radius:8px; padding:12px; margin-top:10px; color:var(--text); background:Canvas; }
-  .editor h2 { margin:0 0 10px; font-size:15px; }
-  .fields { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .handle::before { content:""; position:absolute; top:0; bottom:0; left:-1px; width:2px; background:var(--accent); box-shadow:0 0 12px var(--glow-strong), 0 0 2px var(--accent); }
+  .knob { position:absolute; top:50%; left:0; transform:translate(-50%,-50%); width:32px; height:32px; display:grid; place-items:center; border-radius:50%;
+    background:var(--accent); color:var(--inverse); font-size:16px; font-weight:700; box-shadow:var(--accent-glow); }
+
+  #prompts { display:flow-root; }
+  html.embed #prompts { max-height:38vh; overflow:auto; }
+  .prompt { margin-top:10px; padding:10px 12px; border-radius:8px; background:var(--s1); border:1px solid var(--line-subtle); font-size:13px; line-height:1.55; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .prompt-label { font-size:12px; font-weight:600; color:var(--accent); margin-bottom:2px; }
+
+  .toolbar { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin:10px 0; }
+
+  button { font:inherit; font-size:13px; cursor:pointer; border:1px solid rgba(255,255,255,.15); border-radius:8px; background:rgba(255,255,255,.05); color:var(--text); padding:7px 14px; transition:background .15s, border-color .15s, box-shadow .15s, filter .15s; }
+  button:hover { background:var(--s3); border-color:var(--line-hi); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:var(--inverse); font-weight:700; }
+  button.primary:hover { filter:brightness(1.08); box-shadow:0 0 16px var(--glow-strong); }
+  button:disabled { opacity:.5; cursor:not-allowed; box-shadow:none; }
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+  .editor { margin-top:14px; padding:16px; border-radius:16px; background:rgba(20,22,26,.85); border:1px solid var(--line-subtle);
+    backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); box-shadow:var(--card-shadow); }
+  .editor h2 { margin:0 0 12px; font-size:16px; line-height:1.5; font-weight:600; }
+  .fields { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
   .field { min-width:0; }
   .field.full { grid-column:1/-1; }
-  .field label { display:block; font-size:12px; margin-bottom:4px; color:var(--muted); }
-  .field input[type=text], .field input[type=url], .field input[type=password], .field input[type=file], .field textarea { width:100%; padding:7px 8px; border:1px solid var(--line); border-radius:5px; background:transparent; color:inherit; }
-  .field textarea { min-height:72px; resize:vertical; }
-  .checks { display:flex; flex-wrap:wrap; gap:12px; margin:10px 0; font-size:13px; }
-  .checks label { display:flex; align-items:center; gap:5px; }
-  .hint { color:var(--muted); font-size:12px; line-height:1.5; margin:8px 0; }
-  .result { display:none; margin-top:10px; }
-  .result input { width:100%; margin:6px 0; padding:7px; border:1px solid var(--line); border-radius:5px; background:transparent; color:inherit; }
-  .error { color:#b42318; font-size:12px; margin-top:6px; white-space:pre-wrap; }
-  .status { color:var(--muted); font-size:12px; line-height:1.5; white-space:pre-wrap; margin-top:8px; }
-  .status.fail { color:#b42318; font-weight:600; }
-  .section-title { margin:16px 0 8px; padding-top:12px; border-top:1px solid var(--line); font-size:14px; }
-  @media(max-width:520px) { .fields { grid-template-columns:1fr; } .field.full { grid-column:auto; } }
+  .field label { display:block; font-size:12px; line-height:1.4; font-weight:500; margin-bottom:4px; color:var(--muted); }
+  input[type=text], input[type=url], input[type=password], input[type=file], select, textarea, .result input {
+    width:100%; padding:8px 10px; border:1px solid rgba(255,255,255,.1); border-radius:8px; background:var(--s2); color:var(--text); font:inherit; font-size:13px; transition:border-color .15s, box-shadow .15s; }
+  input::placeholder, textarea::placeholder { color:var(--muted); opacity:.75; }
+  input[type=text]:focus, input[type=url]:focus, input[type=password]:focus, select:focus, textarea:focus, .result input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 2px rgba(0,255,102,.2); }
+  input[type=file]::file-selector-button { margin-right:10px; padding:4px 10px; border:1px solid rgba(255,255,255,.15); border-radius:6px; background:rgba(255,255,255,.05); color:var(--text); font:inherit; font-size:12px; cursor:pointer; }
+  textarea { min-height:72px; resize:vertical; line-height:1.55; }
+  input[type=checkbox] { accent-color:var(--accent); width:15px; height:15px; margin:0; }
+  .checks { display:flex; flex-wrap:wrap; gap:8px 16px; margin:12px 0; font-size:13px; }
+  .checks label, .remember { display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .remember { margin-top:12px; font-size:13px; }
+  .hint { color:var(--muted); font-size:12px; line-height:1.5; font-weight:500; margin:8px 0; }
+  .result { display:none; margin-top:12px; }
+  .result input { margin:6px 0; }
+  .section-title { margin:20px 0 10px; padding-top:16px; border-top:1px solid var(--line-subtle); font-size:15px; line-height:1.5; font-weight:600; }
+  .status { margin-top:8px; font-size:12px; line-height:1.5; font-weight:500; overflow-wrap:anywhere; }
+  .status:empty { display:none; }
+  .status div { padding:2px 0; color:var(--muted); }
+  .status .ok { color:var(--accent); } .status .fail { color:var(--error); }
+  .error { color:var(--error); font-size:12px; font-weight:500; margin-top:8px; white-space:pre-wrap; }
+  .error:empty { display:none; }
+  @media (max-width:520px) { .fields { grid-template-columns:1fr; } .field.full { grid-column:auto; } body { padding:14px 10px 32px; } }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
 </style>
 </head>
 <body>
-<main class="app">
+<main class="app" id="app">
+  <header class="page-head" id="pageHead"><h1>圖片比較工具</h1><p>設定圖片、比例與提示詞，產生可嵌入 Notion 的連結</p></header>
+
   <div class="viewer" id="viewer" aria-label="拖曳分隔線比較兩張圖片">
-    <img id="imgA" alt="原圖" hidden>
-    <div class="overlay" id="overlay"><img id="imgB" alt="生成結果" hidden></div>
+    <!-- 底層＝圖片 B（右側）；上層裁切＝圖片 A（左側），與標籤位置一致 -->
+    <img id="imgB" alt="生成結果" hidden>
+    <div class="overlay" id="overlay"><img id="imgA" alt="原圖" hidden></div>
     <span class="tag left" id="tagA">原圖</span><span class="tag right" id="tagB">生成結果</span>
     <div class="handle" id="handle"><span class="knob">↔</span></div>
   </div>
+
   <section id="prompts">
-    <div class="prompt" id="promptA"><div class="prompt-label" id="promptLabelA">提示詞 A</div><div class="prompt-body" id="promptBodyA"></div></div>
-    <div class="prompt" id="promptB"><div class="prompt-label" id="promptLabelB">提示詞 B</div><div class="prompt-body" id="promptBodyB"></div></div>
+    <div class="prompt" id="promptA"><div class="prompt-label" id="promptLabelA">提示詞 A</div><div id="promptBodyA"></div></div>
+    <div class="prompt" id="promptB"><div class="prompt-label" id="promptLabelB">提示詞 B</div><div id="promptBodyB"></div></div>
   </section>
-  <div class="toolbar" id="toolbar"><button id="editBtn" type="button">編輯設定</button></div>
+
+  <div class="toolbar" id="toolbar" hidden><button id="editBtn" type="button">編輯設定</button></div>
+
   <section class="editor" id="editor" hidden>
     <h2>比較項目設定</h2>
     <div class="fields">
       <div class="field"><label for="urlA">圖片 A 網址（原圖／左側）</label><input id="urlA" type="url" placeholder="上傳後自動填入，或貼上 HTTPS 網址"></div>
       <div class="field"><label for="urlB">圖片 B 網址（結果／右側）</label><input id="urlB" type="url" placeholder="上傳後自動填入，或貼上 HTTPS 網址"></div>
-      <div class="field full"><label for="ratio">嵌入後圖片顯示比例</label><select id="ratio" style="width:100%;padding:7px 8px;border:1px solid var(--line);border-radius:5px;background:transparent;color:inherit"><option value="3:4">3:4（直式，適合目前圖片）</option><option value="4:5">4:5（直式）</option><option value="9:16">9:16（手機直式）</option><option value="1:1">1:1（正方形）</option><option value="4:3">4:3（橫式）</option><option value="16:9">16:9（寬螢幕）</option></select></div>
+      <div class="field full"><label for="ratio">嵌入後圖片顯示比例（嵌入後固定，完整顯示不裁切）</label><select id="ratio"><option value="3:4">3:4（直式，適合目前圖片）</option><option value="4:5">4:5（直式）</option><option value="9:16">9:16（手機直式）</option><option value="1:1">1:1（正方形）</option><option value="4:3">4:3（橫式）</option><option value="16:9">16:9（寬螢幕）</option></select></div>
       <div class="field"><label for="labelA">圖片 A 標籤</label><input id="labelA" type="text" value="原圖" maxlength="40"></div>
       <div class="field"><label for="labelB">圖片 B 標籤</label><input id="labelB" type="text" value="生成結果" maxlength="40"></div>
       <div class="field"><label for="promptTitleA">提示詞 A 標題</label><input id="promptTitleA" type="text" value="提示詞（原圖）" maxlength="80"></div>
@@ -78,22 +123,31 @@
       <label><input id="showPromptB" type="checkbox" checked> 顯示提示詞 B</label>
       <label><input id="showEditor" type="checkbox"> 在嵌入頁保留編輯按鈕</label>
     </div>
+
     <h3 class="section-title">直接上傳圖片到 GitHub</h3>
     <div class="fields">
       <div class="field"><label for="ghOwner">GitHub 帳號／組織</label><input id="ghOwner" type="text" placeholder="例如：my-account" autocomplete="off"></div>
       <div class="field"><label for="ghRepo">公開儲存庫名稱</label><input id="ghRepo" type="text" placeholder="例如：image-compare" autocomplete="off"></div>
-      <div class="field"><label for="ghBranch">分支</label><input id="ghBranch" type="text" value="" placeholder="留空＝儲存庫預設分支"></div>
-      <div class="field"><label for="ghFolder">圖片資料夾（選填）</label><input id="ghFolder" type="text" value="comparison-images" placeholder="comparison-images"></div>
+      <div class="field"><label for="ghBranch">分支（留空＝儲存庫預設分支）</label><input id="ghBranch" type="text" placeholder="main" autocomplete="off"></div>
+      <div class="field"><label for="ghFolder">圖片資料夾（選填）</label><input id="ghFolder" type="text" value="comparison-images" placeholder="comparison-images" autocomplete="off"></div>
       <div class="field full"><label for="ghToken">GitHub Fine-grained Personal Access Token</label><input id="ghToken" type="password" placeholder="貼上具備此儲存庫 Contents: Read and write 權限的 Token" autocomplete="off"></div>
-      <div class="field"><label for="fileA">選擇圖片 A</label><input id="fileA" type="file" accept="image/*"></div>
-      <div class="field"><label for="fileB">選擇圖片 B</label><input id="fileB" type="file" accept="image/*"></div>
+    </div>
+    <label class="remember"><input id="ghRemember" type="checkbox"> 記住帳號、儲存庫、分支與資料夾（不含 Token，只存在這台瀏覽器）</label>
+    <div class="fields" style="margin-top:12px">
+      <div class="field"><label for="fileA">選擇圖片 A（左側）</label><input id="fileA" type="file" accept="image/*"></div>
+      <div class="field"><label for="fileB">選擇圖片 B（右側）</label><input id="fileB" type="file" accept="image/*"></div>
     </div>
     <div class="toolbar"><button id="uploadBtn" type="button">上傳選取的圖片</button></div>
-    <p class="hint">請使用公開儲存庫，Notion 才能讀取圖片。Token 只在目前頁面記憶體中使用，不會寫入嵌入網址或自動儲存；關閉或重新整理頁面後需重新輸入。請勿使用有不必要權限的 Token，也不要上傳公司機密或私人圖片。建議單張圖片低於 10 MB。</p>
+    <p class="hint">請使用公開儲存庫，Notion 才能讀取圖片。Token 只在目前頁面記憶體中使用，不會寫入嵌入網址，也不會被「記住」；全部上傳成功後會自動清除。請勿使用有不必要權限的 Token，也不要上傳公司機密或私人圖片。建議單張圖片低於 10 MB。</p>
     <div class="status" id="uploadStatus" role="status"></div>
-    <p class="hint">比例會固定在你選定的比例；Notion 可以調整嵌入區塊寬度，但不會改變比例。提示詞與顯示選項會寫入產生的網址，請勿放入機密內容。</p>
-    <div class="toolbar"><button id="previewBtn" type="button">套用預覽</button><button id="linkBtn" type="button">複製／取得嵌入連結</button></div>
-    <div class="result" id="result"><div class="field"><label for="shareUrl">嵌入網址</label><input id="shareUrl" readonly></div><div class="toolbar"><button id="copyBtn" type="button">複製網址</button></div><p class="hint">將網址部署到 GitHub Pages 後，在 Notion 輸入 /embed，貼上此網址即可。一般使用者開啟連結時只會看到比較內容，不會看到設定面板（除非勾選保留編輯按鈕）。</p></div>
+
+    <p class="hint">比例會固定在你選定的比例；Notion 調整嵌入區塊的寬或高時，圖片會等比縮放並完整顯示。提示詞與顯示選項會寫入產生的網址，請勿放入機密內容。</p>
+    <div class="toolbar"><button id="previewBtn" type="button" class="primary">套用預覽</button><button id="linkBtn" type="button" class="primary">複製／取得嵌入連結</button></div>
+    <div class="result" id="result">
+      <div class="field"><label for="shareUrl">嵌入網址（修改設定後會自動更新，可再次複製）</label><input id="shareUrl" readonly></div>
+      <div class="toolbar"><button id="copyBtn" type="button" class="primary">複製網址</button></div>
+      <p class="hint">將網址部署到 GitHub Pages 後，在 Notion 輸入 /embed，貼上此網址即可。一般使用者開啟連結時只會看到比較內容，不會看到設定面板（除非勾選保留編輯按鈕）。</p>
+    </div>
     <div class="error" id="error" role="status"></div>
   </section>
 </main>
@@ -102,47 +156,93 @@
   const $ = id => document.getElementById(id);
   const params = new URLSearchParams(location.search);
   const decode = (key, fallback='') => params.has(key) ? params.get(key) : fallback;
+  const RATIOS = ['3:4','4:5','9:16','1:1','4:3','16:9'];
+
   $('urlA').value = decode('a'); $('urlB').value = decode('b');
-  $('ratio').value = ['3:4','4:5','9:16','1:1','4:3','16:9'].includes(decode('r','3:4')) ? decode('r','3:4') : '3:4';
+  $('ratio').value = RATIOS.includes(decode('r','3:4')) ? decode('r','3:4') : '3:4';
   $('labelA').value = decode('la','原圖'); $('labelB').value = decode('lb','生成結果');
   $('promptTitleA').value = decode('pta','提示詞（原圖）'); $('promptTitleB').value = decode('ptb','提示詞（生成結果）');
   $('textA').value = decode('pa'); $('textB').value = decode('pb');
   $('showLabels').checked = decode('labels','1') !== '0';
   $('showPromptA').checked = decode('showA','1') !== '0'; $('showPromptB').checked = decode('showB','1') !== '0';
   $('showEditor').checked = decode('edit','0') === '1';
+
   const embedMode = params.get('view') === '1';
   const configureMode = params.get('configure') === '1' || !embedMode;
+  document.documentElement.classList.toggle('embed', embedMode);
+  $('pageHead').hidden = embedMode;
   $('editor').hidden = !configureMode;
-  $('toolbar').hidden = !(configureMode || params.get('edit') === '1');
+
+  /* ---------- 記住 GitHub 設定（不含 Token） ---------- */
+  const STORE_KEY = 'image-compare.github.v1';
+  const GH_FIELDS = { owner:'ghOwner', repo:'ghRepo', branch:'ghBranch', folder:'ghFolder' };
+  function loadGh() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY); if (!raw) return;
+      const d = JSON.parse(raw);
+      Object.entries(GH_FIELDS).forEach(([k, id]) => { if (typeof d[k] === 'string') $(id).value = d[k]; });
+      $('ghRemember').checked = true;
+    } catch (e) { /* 儲存被封鎖時略過 */ }
+  }
+  function saveGh() {
+    try {
+      if ($('ghRemember').checked) {
+        const d = {}; Object.entries(GH_FIELDS).forEach(([k, id]) => { d[k] = $(id).value.trim(); });
+        localStorage.setItem(STORE_KEY, JSON.stringify(d));
+      } else localStorage.removeItem(STORE_KEY);
+    } catch (e) { /* 忽略 */ }
+  }
+  loadGh();
+  [...Object.values(GH_FIELDS), 'ghRemember'].forEach(id => { $(id).addEventListener('input', saveGh); $(id).addEventListener('change', saveGh); });
+
+  /* ---------- 圖片與預覽 ---------- */
   function setImage(id, url, alt) {
     const img = $(id);
-    img.hidden = !url;
-    img.alt = alt;
-    img.dataset.orig = url || '';
-    img.dataset.tries = '0';
+    img.hidden = !url; img.alt = alt;
+    img.dataset.orig = url || ''; img.dataset.tries = '0';
+    img.style.visibility = '';
     img.onerror = () => {
       const tries = Number(img.dataset.tries || 0);
       if (img.dataset.orig && tries < 4) {
         // 剛上傳的圖片 CDN 可能還沒同步，稍後自動重試
-        img.dataset.tries = String(tries + 1);
+        img.dataset.tries = String(tries + 1); img.style.visibility = 'hidden';
         setTimeout(() => { img.src = img.dataset.orig + (img.dataset.orig.includes('?') ? '&' : '?') + 'retry=' + Date.now(); }, 1500 * (tries + 1));
         return;
       }
       img.hidden = true;
       $('error').textContent = '有圖片無法載入（網址已保留在欄位中）。請確認儲存庫是「公開」的、網址為 HTTPS，且檔案格式不是 SVG。';
     };
-    img.onload = () => { if ($('error').textContent.startsWith('有圖片無法載入')) $('error').textContent = ''; };
+    img.onload = () => { img.style.visibility = ''; if ($('error').textContent.startsWith('有圖片無法載入')) $('error').textContent = ''; };
     if (url) img.src = url; else img.removeAttribute('src');
   }
+
   let sliderValue = 50;
   function updateSlider() {
-    const ratio = $('ratio').value || '3:4';
-    $('viewer').style.aspectRatio = ratio.replace(':', ' / ');
-    const v = sliderValue;
-    $('overlay').style.width = v + '%'; $('handle').style.left = v + '%';
-    const w = $('viewer').clientWidth;
-    $('imgB').style.width = w + 'px';
+    $('overlay').style.width = sliderValue + '%';
+    $('handle').style.left = sliderValue + '%';
   }
+
+  /* 固定比例：依容器寬度與（嵌入時）視窗高度，算出能「完整放進去」的最大尺寸，再置中 */
+  function layout() {
+    const [rw, rh] = ($('ratio').value || '3:4').split(':').map(Number);
+    const viewer = $('viewer');
+    const availW = Math.max(120, $('app').clientWidth);
+    let others = 0;
+    [$('prompts'), $('toolbar')].forEach(el => {
+      if (el.hidden || !el.offsetHeight) return;
+      const cs = getComputedStyle(el);
+      others += el.offsetHeight + parseFloat(cs.marginTop || 0) + parseFloat(cs.marginBottom || 0);
+    });
+    const pad = embedMode ? 20 : 0;
+    const availH = embedMode && $('editor').hidden ? window.innerHeight - pad - others - 2 : window.innerHeight * 0.72;
+    const w = Math.floor(Math.max(120, Math.min(availW, availH * rw / rh)));
+    viewer.style.width = w + 'px';
+    viewer.style.height = Math.round(w * rh / rw) + 'px';
+    viewer.style.aspectRatio = rw + ' / ' + rh;
+    $('imgA').style.width = viewer.clientWidth + 'px';   // 上層圖片與底層同寬，裁切時不會位移
+    updateSlider();
+  }
+
   function apply() {
     const a = $('urlA').value.trim(), b = $('urlB').value.trim();
     const la = $('labelA').value.trim() || '圖片 A', lb = $('labelB').value.trim() || '圖片 B';
@@ -154,30 +254,51 @@
     $('promptBodyA').textContent = $('textA').value; $('promptBodyB').textContent = $('textB').value;
     $('promptA').hidden = !$('showPromptA').checked || !$('textA').value.trim();
     $('promptB').hidden = !$('showPromptB').checked || !$('textB').value.trim();
-    $('toolbar').hidden = !(configureMode || $('showEditor').checked || params.get('edit') === '1');
-    updateSlider();
+    $('toolbar').hidden = !(configureMode || $('showEditor').checked);
+    layout();
   }
+
+  /* ---------- 嵌入連結與複製 ---------- */
   function buildUrl() {
     const u = new URL(location.href); u.search = '';
     const values = {view:'1', r:$('ratio').value, a:$('urlA').value.trim(), b:$('urlB').value.trim(), la:$('labelA').value, lb:$('labelB').value, pta:$('promptTitleA').value, ptb:$('promptTitleB').value, pa:$('textA').value, pb:$('textB').value, labels:$('showLabels').checked?'1':'0', showA:$('showPromptA').checked?'1':'0', showB:$('showPromptB').checked?'1':'0', edit:$('showEditor').checked?'1':'0'};
     Object.entries(values).forEach(([k,v]) => { if (v !== '') u.searchParams.set(k,v); });
     return u.toString();
   }
-  $('editBtn').addEventListener('click', () => { $('editor').hidden = !$('editor').hidden; });
-  $('previewBtn').addEventListener('click', () => { $('error').textContent=''; apply(); });
-  $('linkBtn').addEventListener('click', () => {
-    $('error').textContent='';
-    if (!$('urlA').value.trim() || !$('urlB').value.trim()) { $('error').textContent='請先填入兩張圖片的 HTTPS 網址。'; return; }
-    $('shareUrl').value = buildUrl(); $('result').style.display='block';
-    navigator.clipboard?.writeText($('shareUrl').value).then(() => { $('linkBtn').textContent='嵌入連結已複製'; }).catch(() => {});
+  function flash(btn, msg) {            // 暫時顯示「已複製」，之後自動還原
+    if (!btn.dataset.label) btn.dataset.label = btn.textContent;
+    btn.textContent = msg; clearTimeout(btn._t);
+    btn._t = setTimeout(() => { btn.textContent = btn.dataset.label; }, 2000);
+  }
+  function resetCopyButtons() {
+    [$('linkBtn'), $('copyBtn')].forEach(b => { clearTimeout(b._t); if (b.dataset.label) b.textContent = b.dataset.label; });
+  }
+  async function copyText(text, inputEl) {
+    try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* 改用備援 */ }
+    try { inputEl.focus(); inputEl.select(); const ok = document.execCommand('copy'); inputEl.setSelectionRange(0, 0); return ok; } catch (e) { return false; }
+  }
+  function refreshShare() {             // 修改設定後：還原按鈕、同步更新已產生的網址
+    resetCopyButtons();
+    if ($('result').style.display === 'block' && $('urlA').value.trim() && $('urlB').value.trim()) $('shareUrl').value = buildUrl();
+  }
+
+  $('editBtn').addEventListener('click', () => { $('editor').hidden = !$('editor').hidden; layout(); });
+  $('previewBtn').addEventListener('click', () => { $('error').textContent = ''; apply(); });
+  $('linkBtn').addEventListener('click', async () => {
+    $('error').textContent = '';
+    if (!$('urlA').value.trim() || !$('urlB').value.trim()) { $('error').textContent = '請先填入兩張圖片的 HTTPS 網址。'; return; }
+    $('shareUrl').value = buildUrl(); $('result').style.display = 'block';
+    flash($('linkBtn'), (await copyText($('shareUrl').value, $('shareUrl'))) ? '✔ 已複製連結' : '請手動複製下方網址');
   });
   $('copyBtn').addEventListener('click', async () => {
-    const val = $('shareUrl').value;
-    try { await navigator.clipboard.writeText(val); $('copyBtn').textContent='已複製'; }
-    catch { $('shareUrl').select(); document.execCommand('copy'); $('copyBtn').textContent='已複製'; }
+    $('shareUrl').value = buildUrl();
+    flash($('copyBtn'), (await copyText($('shareUrl').value, $('shareUrl'))) ? '✔ 已複製' : '請手動複製');
   });
-  $('ratio').addEventListener('change', updateSlider);
+  $('editor').addEventListener('input', refreshShare);
+  $('editor').addEventListener('change', refreshShare);
+  $('ratio').addEventListener('change', layout);
 
+  /* ---------- 上傳到 GitHub ---------- */
   function safeFileName(name) {
     const lastDot = name.lastIndexOf('.');
     const ext = lastDot > 0 ? name.slice(lastDot).toLowerCase().replace(/[^.a-z0-9]/g, '') : '.png';
@@ -193,12 +314,10 @@
     });
   }
   async function uploadToGitHub(file, token, owner, repo, branch, folder) {
-    // 容許貼上 "owner/repo" 或完整 GitHub 網址
-    const m = `${owner}/${repo}`.match(/github\.com\/([^/\s]+)\/([^/\s#?]+)/i);
+    const m = `${owner}/${repo}`.match(/github\.com\/([^/\s]+)\/([^/\s#?]+)/i);   // 容許貼上完整網址或 owner/repo
     if (m) { owner = m[1]; repo = m[2]; }
     repo = repo.replace(/\.git$/i, '').replace(/^\/+|\/+$/g, '');
-    owner = owner.replace(/^\/+|\/+$/g, '');
-    if (owner.includes('/')) { owner = owner.split('/')[0]; }
+    owner = owner.replace(/^\/+|\/+$/g, '').split('/')[0];
     if (file.size > 10 * 1024 * 1024) throw new Error(`${file.name} 超過 10 MB，請先壓縮圖片後再上傳。`);
     const okExt = /\.(png|jpe?g|gif|webp|avif|bmp)$/i.test(file.name);
     if (!(file.type || '').startsWith('image/') && !okExt) throw new Error(`${file.name} 不是可辨識的圖片檔（支援 png/jpg/gif/webp/avif）。`);
@@ -207,10 +326,11 @@
     const encodedPath = path.split('/').map(encodeURIComponent).join('/');
     const endpoint = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}`;
     const content = await fileToBase64(file);
+    const message = `Upload comparison image: ${path}`;
     const response = await fetch(endpoint, {
       method: 'PUT',
       headers: { 'Accept': 'application/vnd.github+json', 'Authorization': `Bearer ${token}`, 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' },
-      body: JSON.stringify(branch ? { message: `Upload comparison image: ${path}`, content, branch } : { message: `Upload comparison image: ${path}`, content })
+      body: JSON.stringify(branch ? { message, content, branch } : { message, content })
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -219,23 +339,20 @@
       if (response.status === 404) throw new Error(`找不到儲存庫或分支（${detail}）。請確認帳號、儲存庫名稱與分支。`);
       throw new Error(`上傳 ${file.name} 失敗：${detail}`);
     }
-    // Build a predictable public HTTPS URL from the uploaded path instead of relying on
-    // GitHub's optional download_url field, which may be absent in some responses.
-    // 優先用這次 commit 的 SHA 當 ref：不受分支名稱（main/master）影響，且內容永不改變。
-    const ref = data?.commit?.sha || branch || 'main';
-    const publicRef = ref.split('/').map(encodeURIComponent).join('/');
-    return `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${publicRef}/${encodedPath}`;
+    // 以這次 commit 的 SHA 當 ref：不受分支名稱影響，內容也不會變動
+    const ref = (data && data.commit && data.commit.sha) || branch || 'main';
+    return `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${ref.split('/').map(encodeURIComponent).join('/')}/${encodedPath}`;
   }
+
   $('uploadBtn').addEventListener('click', async () => {
     const owner = $('ghOwner').value.trim(), repo = $('ghRepo').value.trim(), token = $('ghToken').value.trim();
-    const branch = $('ghBranch').value.trim();
-    const folder = $('ghFolder').value.trim();
-    const files = [['fileA', 'urlA', 'A'], ['fileB', 'urlB', 'B']].filter(([fileId]) => $(fileId).files?.[0]);
+    const branch = $('ghBranch').value.trim(), folder = $('ghFolder').value.trim();
+    const files = [['fileA', 'urlA', 'A'], ['fileB', 'urlB', 'B']].filter(([fileId]) => $(fileId).files && $(fileId).files[0]);
     const status = $('uploadStatus');
-    const log = (msg, fail) => { status.textContent += (status.textContent ? '\n' : '') + msg; if (fail) status.classList.add('fail'); };
-    status.textContent = ''; status.classList.remove('fail'); $('error').textContent = '';
-    if (!owner || !repo || !token) { log('請先填寫 GitHub 帳號、公開儲存庫名稱與 Token。', true); return; }
-    if (!files.length) { log('請至少選擇一張要上傳的圖片。', true); return; }
+    const log = (msg, type = 'info') => { const d = document.createElement('div'); d.className = type; d.textContent = msg; status.appendChild(d); };
+    status.textContent = ''; $('error').textContent = '';
+    if (!owner || !repo || !token) { log('請先填寫 GitHub 帳號、公開儲存庫名稱與 Token。', 'fail'); return; }
+    if (!files.length) { log('請至少選擇一張要上傳的圖片。', 'fail'); return; }
     $('uploadBtn').disabled = true;
     let failed = 0;
     for (const [fileId, urlId, side] of files) {
@@ -243,46 +360,38 @@
       try {
         log(`正在上傳圖片 ${side}：${file.name}…`);
         const url = await uploadToGitHub(file, token, owner, repo, branch, folder);
-        $(urlId).value = url;           // 先填入網址，不受後續預覽成敗影響
-        $(fileId).value = '';
-        log(`✔ 圖片 ${side} 上傳完成，網址已填入：${url}`);
+        $(urlId).value = url; $(fileId).value = '';
+        log(`✔ 圖片 ${side} 上傳完成，網址已填入：${url}`, 'ok');
       } catch (error) {
-        failed++;
-        log(`✖ 圖片 ${side} 失敗：${error?.message || '請檢查網路與 GitHub 設定。'}`, true);
+        failed++; log(`✖ 圖片 ${side} 失敗：${(error && error.message) || '請檢查網路與 GitHub 設定。'}`, 'fail');
       }
     }
-    try { apply(); } catch (e) { console.error(e); }
+    try { apply(); refreshShare(); } catch (e) { console.error(e); }
     if ($('urlA').value.trim() && $('urlB').value.trim()) {
-      $('shareUrl').value = buildUrl();
-      $('result').style.display = 'block';
-      log('兩張圖片網址已就緒，嵌入連結已產生；請確認預覽正常後複製連結。');
-    } else if (!failed) {
-      log('圖片網址已填入。另一張圖片也設定完成後，即可取得嵌入連結。');
-    }
+      $('shareUrl').value = buildUrl(); $('result').style.display = 'block';
+      log('兩張圖片網址已就緒，嵌入連結已產生；請確認預覽正常後複製連結。', 'ok');
+    } else if (!failed) log('圖片網址已填入。另一張圖片也設定完成後，即可取得嵌入連結。');
     $('uploadBtn').disabled = false;
-    if (!failed) $('ghToken').value = '';   // 全部成功才清除 Token；失敗時保留以便重試
+    if (!failed) $('ghToken').value = '';      // 全部成功才清除 Token；失敗時保留以便重試
   });
-  // Allow dragging the divider directly over the image, not just the range control below.
+
+  /* ---------- 拖曳分隔線 ---------- */
   let dragging = false;
   function setFromPointer(event) {
     const rect = $('viewer').getBoundingClientRect();
     if (!rect.width) return;
-    const percent = Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100));
-    sliderValue = percent;
+    sliderValue = Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100));
     updateSlider();
   }
   $('viewer').addEventListener('pointerdown', event => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
-    dragging = true;
-    $('viewer').setPointerCapture?.(event.pointerId);
-    setFromPointer(event);
+    dragging = true; $('viewer').setPointerCapture && $('viewer').setPointerCapture(event.pointerId); setFromPointer(event);
   });
   $('viewer').addEventListener('pointermove', event => { if (dragging) setFromPointer(event); });
-  function stopDragging() { dragging = false; }
-  $('viewer').addEventListener('pointerup', stopDragging);
-  $('viewer').addEventListener('pointercancel', stopDragging);
-  $('viewer').addEventListener('lostpointercapture', stopDragging);
-  window.addEventListener('resize', updateSlider);
+  const stopDragging = () => { dragging = false; };
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => $('viewer').addEventListener(t, stopDragging));
+  window.addEventListener('resize', layout);
+  window.addEventListener('load', layout);
   apply();
 })();
 </script>
