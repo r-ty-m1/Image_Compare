@@ -1,18 +1,35 @@
-# Minimal Image Compare Slider for Notion
+# Notion 圖片比較小工具 v2
 
-A lightweight, transparent-background before/after slider for embedding in Notion via GitHub Pages. The page has no framework or external dependencies.
+## 功能
+- 比較畫面不再顯示圖片下方的滑桿；直接拖曳圖片上的分隔線。
+- 可選擇 3:4、4:5、9:16、1:1、4:3、16:9 比例。Notion 區塊可調整寬度，比例會保持不變。
+- 可在編輯器選取圖片，直接上傳至自己的 GitHub 公開儲存庫，並自動填入圖片網址。
+- 可設定圖片標籤、提示詞與是否顯示。
+- 取得嵌入連結後，在 Notion 輸入 `/embed` 並貼上連結。
 
-## Publish with GitHub Pages
-1. Create a GitHub repository.
-2. Upload `index.html` to the repository root.
-3. In **Settings → Pages**, deploy from the `main` branch and `/ (root)`.
-4. Wait for GitHub Pages to publish the site. Open the HTTPS URL.
-5. Add `?configure=1` to the URL to open the settings panel.
-6. Enter two image HTTPS URLs, optional prompt text, and choose which labels/prompts to show.
-7. Click **取得嵌入連結**, then paste that URL into a Notion `/embed` block.
+## 部署到 GitHub Pages
+1. 將 `index.html` 上傳或覆蓋到原本啟用 GitHub Pages 的儲存庫。
+2. 等待 GitHub Pages 部署完成。
+3. 開啟你的 Pages 網址，進入編輯器並設定圖片與比例。
 
-## Notes
-- The page has a transparent background and minimal styling, so it blends into Notion.
-- Images need direct HTTPS URLs that can be loaded by viewers. This tool does not upload images.
-- Prompt text and display options are encoded in the generated URL. Do not put confidential text in the URL.
-- With GitHub Pages, the page itself is public. Use only images and prompts approved for public access.
+## 直接從編輯器上傳圖片到 GitHub
+1. 建立或選擇一個 **公開** GitHub 儲存庫（Notion 必須能公開讀取圖片）。
+2. 到 GitHub Settings → Developer settings → Personal access tokens → Fine-grained tokens 建立 Token。
+3. Repository access 限定為存放圖片的那個儲存庫；Repository permissions 將 **Contents** 設為 **Read and write**。
+4. 在工具編輯器填入 GitHub 帳號／組織、儲存庫名稱、分支（通常是 `main`）、資料夾（可留預設），貼上 Token，選取圖片後按「上傳選取的圖片」。
+5. 上傳成功後，圖片網址會自動填入圖片 A／B 欄位。確認預覽正常後取得嵌入連結。
+
+### 安全注意
+- Token 只在當前頁面記憶體中使用，不會寫入分享連結，也不會儲存到瀏覽器；頁面重新整理或完成上傳後需重新輸入。
+- 請只建立限縮到單一儲存庫、僅有必要權限的 Token，並避免在共用或不可信的電腦上使用。用完可到 GitHub 撤銷 Token。
+- 公開儲存庫中的圖片可被任何人讀取；不要上傳公司機密、私人或未授權素材。
+- 目前限制單張圖片 10 MB 以下。
+
+## Notion 使用方式
+1. 在編輯器設定圖片、標籤、提示詞與顯示比例。
+2. 按「複製／取得嵌入連結」。
+3. 回到 Notion 輸入 `/embed`，貼上連結。
+4. 可拖曳 Notion 區塊邊緣改變顯示寬度；圖片比例保持設定值。
+
+## Notion 內直接編輯的限制
+一般 Notion 頁面不能把第三方網頁編輯器直接變成原生 Notion 編輯區塊。這版採用最簡單可靠的流程：在獨立編輯器設定並複製嵌入網址，再貼入 Notion。若要在 Notion 內直接操作，需要另行開發 Notion 整合或自訂應用。
