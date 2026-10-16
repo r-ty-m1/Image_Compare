@@ -10,7 +10,7 @@
   html, body { margin:0; padding:0; background:transparent !important; }
   body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color:var(--text); }
   .app { width:100%; margin:0; }
-  .viewer { position:relative; width:100%; aspect-ratio:16/9; overflow:hidden; user-select:none; touch-action:pan-y; background:transparent; }
+  .viewer { position:relative; width:100%; aspect-ratio:16/9; overflow:hidden; user-select:none; touch-action:pan-y; background:transparent; cursor:ew-resize; }
   .viewer img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; }
   .viewer img[hidden] { display:none; }
   .overlay { position:absolute; inset:0 auto 0 0; width:50%; overflow:hidden; border-right:1px solid #fff; }
@@ -145,6 +145,26 @@
     catch { $('shareUrl').select(); document.execCommand('copy'); $('copyBtn').textContent='已複製'; }
   });
   $('range').addEventListener('input', updateSlider);
+  // Allow dragging the divider directly over the image, not just the range control below.
+  let dragging = false;
+  function setFromPointer(event) {
+    const rect = $('viewer').getBoundingClientRect();
+    if (!rect.width) return;
+    const percent = Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100));
+    $('range').value = String(percent);
+    updateSlider();
+  }
+  $('viewer').addEventListener('pointerdown', event => {
+    dragging = true;
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    $('viewer').setPointerCapture?.(event.pointerId);
+    setFromPointer(event);
+  });
+  $('viewer').addEventListener('pointermove', event => { if (dragging) setFromPointer(event); });
+  function stopDragging() { dragging = false; }
+  $('viewer').addEventListener('pointerup', stopDragging);
+  $('viewer').addEventListener('pointercancel', stopDragging);
+  $('viewer').addEventListener('lostpointercapture', stopDragging);
   window.addEventListener('resize', updateSlider);
   apply();
 })();
