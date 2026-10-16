@@ -18,7 +18,10 @@
   [hidden] { display:none !important; }
   html, body { margin:0; padding:0; background:var(--bg); }
   body { font-family:var(--font); font-size:14px; line-height:1.55; color:var(--text); padding:20px 16px 40px; overflow-x:hidden; }
-  html.embed body { padding:10px; }
+  html.embed { color-scheme:light dark; }
+  html.embed, html.embed body { background:transparent; }
+  html.embed body { padding:0; }
+  html.embed .viewer { background:transparent; box-shadow:none; border-radius:0; }
   .app { width:100%; max-width:980px; margin:0 auto; }
   html.embed .app { max-width:none; }
 
@@ -91,9 +94,9 @@
 
   <div class="viewer" id="viewer" aria-label="拖曳分隔線比較兩張圖片">
     <!-- 底層＝圖片 B（右側）；上層裁切＝圖片 A（左側），與標籤位置一致 -->
-    <img id="imgB" alt="生成結果" hidden>
-    <div class="overlay" id="overlay"><img id="imgA" alt="原圖" hidden></div>
-    <span class="tag left" id="tagA">原圖</span><span class="tag right" id="tagB">生成結果</span>
+    <img id="imgB" alt="After" hidden>
+    <div class="overlay" id="overlay"><img id="imgA" alt="Before" hidden></div>
+    <span class="tag left" id="tagA">Before</span><span class="tag right" id="tagB">After</span>
     <div class="handle" id="handle"><span class="knob">↔</span></div>
   </div>
 
@@ -109,11 +112,11 @@
     <div class="fields">
       <div class="field"><label for="urlA">圖片 A 網址（原圖／左側）</label><input id="urlA" type="url" placeholder="上傳後自動填入，或貼上 HTTPS 網址"></div>
       <div class="field"><label for="urlB">圖片 B 網址（結果／右側）</label><input id="urlB" type="url" placeholder="上傳後自動填入，或貼上 HTTPS 網址"></div>
-      <div class="field full"><label for="ratio">嵌入後圖片顯示比例（嵌入後固定，完整顯示不裁切）</label><select id="ratio"><option value="3:4">3:4（直式）</option><option value="4:5">4:5（直式）</option><option value="9:16">9:16（手機直式）</option><option value="1:1">1:1（正方形）</option><option value="4:3">4:3（橫式）</option><option value="16:9">16:9（寬螢幕）</option></select></div>
+      <div class="field full"><label for="ratio">嵌入後圖片顯示比例（嵌入後固定，完整顯示不裁切）</label><select id="ratio"><option value="3:4">3:4（直式，適合目前圖片）</option><option value="4:5">4:5（直式）</option><option value="9:16">9:16（手機直式）</option><option value="1:1">1:1（正方形）</option><option value="4:3">4:3（橫式）</option><option value="16:9">16:9（寬螢幕）</option></select></div>
       <div class="field"><label for="labelA">圖片 A 標籤</label><input id="labelA" type="text" value="Before" maxlength="40"></div>
       <div class="field"><label for="labelB">圖片 B 標籤</label><input id="labelB" type="text" value="After" maxlength="40"></div>
-      <div class="field"><label for="promptTitleA">提示詞 A 標題</label><input id="promptTitleA" type="text" value="提示詞（Before）" maxlength="80"></div>
-      <div class="field"><label for="promptTitleB">提示詞 B 標題</label><input id="promptTitleB" type="text" value="提示詞（After）" maxlength="80"></div>
+      <div class="field"><label for="promptTitleA">提示詞 A 標題</label><input id="promptTitleA" type="text" value="Prompt(Before)" maxlength="80"></div>
+      <div class="field"><label for="promptTitleB">提示詞 B 標題</label><input id="promptTitleB" type="text" value="Prompt(After)" maxlength="80"></div>
       <div class="field full"><label for="textA">提示詞 A</label><textarea id="textA" placeholder="可留空，不顯示提示詞"></textarea></div>
       <div class="field full"><label for="textB">提示詞 B</label><textarea id="textB" placeholder="可留空，不顯示提示詞"></textarea></div>
     </div>
@@ -160,8 +163,8 @@
 
   $('urlA').value = decode('a'); $('urlB').value = decode('b');
   $('ratio').value = RATIOS.includes(decode('r','3:4')) ? decode('r','3:4') : '3:4';
-  $('labelA').value = decode('la','原圖'); $('labelB').value = decode('lb','生成結果');
-  $('promptTitleA').value = decode('pta','提示詞（原圖）'); $('promptTitleB').value = decode('ptb','提示詞（生成結果）');
+  $('labelA').value = decode('la','Before'); $('labelB').value = decode('lb','After');
+  $('promptTitleA').value = decode('pta','Prompt(Before)'); $('promptTitleB').value = decode('ptb','Prompt(After)');
   $('textA').value = decode('pa'); $('textB').value = decode('pb');
   $('showLabels').checked = decode('labels','1') !== '0';
   $('showPromptA').checked = decode('showA','1') !== '0'; $('showPromptB').checked = decode('showB','1') !== '0';
@@ -245,7 +248,7 @@
 
   function apply() {
     const a = $('urlA').value.trim(), b = $('urlB').value.trim();
-    const la = $('labelA').value.trim() || '圖片 A', lb = $('labelB').value.trim() || '圖片 B';
+    const la = $('labelA').value.trim() || 'Before', lb = $('labelB').value.trim() || 'After';
     setImage('imgA', a, la); setImage('imgB', b, lb);
     $('tagA').textContent = la; $('tagB').textContent = lb;
     $('tagA').hidden = !$('showLabels').checked; $('tagB').hidden = !$('showLabels').checked;
