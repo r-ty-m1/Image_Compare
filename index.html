@@ -96,11 +96,9 @@
   $('showPromptA').checked = decode('showA','1') !== '0'; $('showPromptB').checked = decode('showB','1') !== '0';
   $('showEditor').checked = decode('edit','0') === '1';
   const embedMode = params.get('view') === '1';
-  if (!embedMode || params.get('configure') === '1') $('editor').hidden = true;
-  $('editor').hidden = true;
-  $('toolbar').hidden = params.get('edit') !== '1' && embedMode;
-  if (params.get('edit') === '1' || params.get('configure') === '1' || !embedMode) $('toolbar').hidden = false;
-  if (params.get('configure') === '1' || !embedMode) $('editor').hidden = false;
+  const configureMode = params.get('configure') === '1' || !embedMode;
+  $('editor').hidden = !configureMode;
+  $('toolbar').hidden = !(configureMode || params.get('edit') === '1');
   function setImage(id, url, alt) {
     const img = $(id);
     img.hidden = !url;
@@ -125,7 +123,7 @@
     $('promptBodyA').textContent = $('textA').value; $('promptBodyB').textContent = $('textB').value;
     $('promptA').hidden = !$('showPromptA').checked || !$('textA').value.trim();
     $('promptB').hidden = !$('showPromptB').checked || !$('textB').value.trim();
-    $('toolbar').hidden = !($('showEditor').checked || !embedMode);
+    $('toolbar').hidden = !(configureMode || $('showEditor').checked || params.get('edit') === '1');
     updateSlider();
   }
   function buildUrl() {
