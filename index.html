@@ -41,6 +41,7 @@
   .result input { width:100%; margin:6px 0; padding:7px; border:1px solid var(--line); border-radius:5px; background:transparent; color:inherit; }
   .error { color:#b42318; font-size:12px; margin-top:6px; white-space:pre-wrap; }
   .status { color:var(--muted); font-size:12px; line-height:1.5; white-space:pre-wrap; margin-top:8px; }
+  .status.fail { color:#b42318; font-weight:600; }
   .section-title { margin:16px 0 8px; padding-top:12px; border-top:1px solid var(--line); font-size:14px; }
   @media(max-width:520px) { .fields { grid-template-columns:1fr; } .field.full { grid-column:auto; } }
 </style>
@@ -81,7 +82,7 @@
     <div class="fields">
       <div class="field"><label for="ghOwner">GitHub 帳號／組織</label><input id="ghOwner" type="text" placeholder="例如：my-account" autocomplete="off"></div>
       <div class="field"><label for="ghRepo">公開儲存庫名稱</label><input id="ghRepo" type="text" placeholder="例如：image-compare" autocomplete="off"></div>
-      <div class="field"><label for="ghBranch">分支</label><input id="ghBranch" type="text" value="main" placeholder="main"></div>
+      <div class="field"><label for="ghBranch">分支</label><input id="ghBranch" type="text" value="" placeholder="留空＝儲存庫預設分支"></div>
       <div class="field"><label for="ghFolder">圖片資料夾（選填）</label><input id="ghFolder" type="text" value="comparison-images" placeholder="comparison-images"></div>
       <div class="field full"><label for="ghToken">GitHub Fine-grained Personal Access Token</label><input id="ghToken" type="password" placeholder="貼上具備此儲存庫 Contents: Read and write 權限的 Token" autocomplete="off"></div>
       <div class="field"><label for="fileA">選擇圖片 A</label><input id="fileA" type="file" accept="image/*"></div>
@@ -117,8 +118,21 @@
     const img = $(id);
     img.hidden = !url;
     img.alt = alt;
+    img.dataset.orig = url || '';
+    img.dataset.tries = '0';
+    img.onerror = () => {
+      const tries = Number(img.dataset.tries || 0);
+      if (img.dataset.orig && tries < 4) {
+        // 剛上傳的圖片 CDN 可能還沒同步，稍後自動重試
+        img.dataset.tries = String(tries + 1);
+        setTimeout(() => { img.src = img.dataset.orig + (img.dataset.orig.includes('?') ? '&' : '?') + 'retry=' + Date.now(); }, 1500 * (tries + 1));
+        return;
+      }
+      img.hidden = true;
+      $('error').textContent = '有圖片無法載入（網址已保留在欄位中）。請確認儲存庫是「公開」的、網址為 HTTPS，且檔案格式不是 SVG。';
+    };
+    img.onload = () => { if ($('error').textContent.startsWith('有圖片無法載入')) $('error').textContent = ''; };
     if (url) img.src = url; else img.removeAttribute('src');
-    img.onerror = () => { img.hidden = true; $('error').textContent = '有圖片無法載入，請確認圖片網址可公開讀取且為 HTTPS。'; };
   }
   let sliderValue = 50;
   function updateSlider() {
@@ -179,8 +193,16 @@
     });
   }
   async function uploadToGitHub(file, token, owner, repo, branch, folder) {
+    // 容許貼上 "owner/repo" 或完整 GitHub 網址
+    const m = `${owner}/${repo}`.match(/github\.com\/([^/\s]+)\/([^/\s#?]+)/i);
+    if (m) { owner = m[1]; repo = m[2]; }
+    repo = repo.replace(/\.git$/i, '').replace(/^\/+|\/+$/g, '');
+    owner = owner.replace(/^\/+|\/+$/g, '');
+    if (owner.includes('/')) { owner = owner.split('/')[0]; }
     if (file.size > 10 * 1024 * 1024) throw new Error(`${file.name} 超過 10 MB，請先壓縮圖片後再上傳。`);
-    if (!file.type.startsWith('image/')) throw new Error(`${file.name} 不是可辨識的圖片檔。`);
+    const okExt = /\.(png|jpe?g|gif|webp|avif|bmp)$/i.test(file.name);
+    if (!(file.type || '').startsWith('image/') && !okExt) throw new Error(`${file.name} 不是可辨識的圖片檔（支援 png/jpg/gif/webp/avif）。`);
+    if (/\.svg$/i.test(file.name) || file.type === 'image/svg+xml') throw new Error('SVG 經 raw.githubusercontent.com 無法正常顯示，請改用 PNG/JPG/WebP。');
     const path = `${folder ? folder.replace(/^\/+|\/+$/g, '') + '/' : ''}${safeFileName(file.name)}`;
     const encodedPath = path.split('/').map(encodeURIComponent).join('/');
     const endpoint = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}`;
@@ -188,7 +210,7 @@
     const response = await fetch(endpoint, {
       method: 'PUT',
       headers: { 'Accept': 'application/vnd.github+json', 'Authorization': `Bearer ${token}`, 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: `Upload comparison image: ${path}`, content, branch })
+      body: JSON.stringify(branch ? { message: `Upload comparison image: ${path}`, content, branch } : { message: `Upload comparison image: ${path}`, content })
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -199,45 +221,46 @@
     }
     // Build a predictable public HTTPS URL from the uploaded path instead of relying on
     // GitHub's optional download_url field, which may be absent in some responses.
-    const publicPath = path.split('/').map(encodeURIComponent).join('/');
-    const publicBranch = branch.split('/').map(encodeURIComponent).join('/');
-    return `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${publicBranch}/${publicPath}`;
+    // 優先用這次 commit 的 SHA 當 ref：不受分支名稱（main/master）影響，且內容永不改變。
+    const ref = data?.commit?.sha || branch || 'main';
+    const publicRef = ref.split('/').map(encodeURIComponent).join('/');
+    return `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${publicRef}/${encodedPath}`;
   }
   $('uploadBtn').addEventListener('click', async () => {
     const owner = $('ghOwner').value.trim(), repo = $('ghRepo').value.trim(), token = $('ghToken').value.trim();
-    const branch = $('ghBranch').value.trim() || 'main';
+    const branch = $('ghBranch').value.trim();
     const folder = $('ghFolder').value.trim();
     const files = [['fileA', 'urlA', 'A'], ['fileB', 'urlB', 'B']].filter(([fileId]) => $(fileId).files?.[0]);
-    $('uploadStatus').textContent = '';
-    $('error').textContent = '';
-    if (!owner || !repo || !token) { $('uploadStatus').textContent = '請先填寫 GitHub 帳號、公開儲存庫名稱與 Token。'; return; }
-    if (!files.length) { $('uploadStatus').textContent = '請至少選擇一張要上傳的圖片。'; return; }
+    const status = $('uploadStatus');
+    const log = (msg, fail) => { status.textContent += (status.textContent ? '\n' : '') + msg; if (fail) status.classList.add('fail'); };
+    status.textContent = ''; status.classList.remove('fail'); $('error').textContent = '';
+    if (!owner || !repo || !token) { log('請先填寫 GitHub 帳號、公開儲存庫名稱與 Token。', true); return; }
+    if (!files.length) { log('請至少選擇一張要上傳的圖片。', true); return; }
     $('uploadBtn').disabled = true;
-    try {
-      for (const [fileId, urlId, side] of files) {
-        const file = $(fileId).files[0];
-        $('uploadStatus').textContent = `正在上傳圖片 ${side}：${file.name}…`;
+    let failed = 0;
+    for (const [fileId, urlId, side] of files) {
+      const file = $(fileId).files[0];
+      try {
+        log(`正在上傳圖片 ${side}：${file.name}…`);
         const url = await uploadToGitHub(file, token, owner, repo, branch, folder);
-        // Write the URL immediately after each successful upload, then refresh the preview.
-        $(urlId).value = url;
-        apply();
-        $('uploadStatus').textContent += `\n圖片 ${side} 上傳完成，網址已填入：\n${url}`;
+        $(urlId).value = url;           // 先填入網址，不受後續預覽成敗影響
         $(fileId).value = '';
+        log(`✔ 圖片 ${side} 上傳完成，網址已填入：${url}`);
+      } catch (error) {
+        failed++;
+        log(`✖ 圖片 ${side} 失敗：${error?.message || '請檢查網路與 GitHub 設定。'}`, true);
       }
-      apply();
-      if ($('urlA').value.trim() && $('urlB').value.trim()) {
-        $('shareUrl').value = buildUrl();
-        $('result').style.display = 'block';
-        $('uploadStatus').textContent += '\n兩張圖片網址已就緒，嵌入連結也已產生；請確認預覽正常後複製連結。';
-      } else {
-        $('uploadStatus').textContent += '\n圖片網址已填入。另一張圖片也設定完成後，即可取得嵌入連結。';
-      }
-    } catch (error) {
-      $('uploadStatus').textContent = error?.message || '上傳失敗，請檢查網路與 GitHub 設定。';
-    } finally {
-      $('uploadBtn').disabled = false;
-      $('ghToken').value = '';
     }
+    try { apply(); } catch (e) { console.error(e); }
+    if ($('urlA').value.trim() && $('urlB').value.trim()) {
+      $('shareUrl').value = buildUrl();
+      $('result').style.display = 'block';
+      log('兩張圖片網址已就緒，嵌入連結已產生；請確認預覽正常後複製連結。');
+    } else if (!failed) {
+      log('圖片網址已填入。另一張圖片也設定完成後，即可取得嵌入連結。');
+    }
+    $('uploadBtn').disabled = false;
+    if (!failed) $('ghToken').value = '';   // 全部成功才清除 Token；失敗時保留以便重試
   });
   // Allow dragging the divider directly over the image, not just the range control below.
   let dragging = false;
