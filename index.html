@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>圖片比較</title>
+<style>
+  :root { color-scheme: light dark; --text: CanvasText; --muted: GrayText; --line: color-mix(in srgb, CanvasText 22%, transparent); --accent: GrayText; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; background:transparent !important; }
+  body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color:var(--text); }
+  .app { width:100%; margin:0; }
+  .viewer { position:relative; width:100%; aspect-ratio:16/9; overflow:hidden; user-select:none; touch-action:pan-y; background:transparent; }
+  .viewer img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; }
+  .viewer img[hidden] { display:none; }
+  .overlay { position:absolute; inset:0 auto 0 0; width:50%; overflow:hidden; border-right:1px solid #fff; }
+  .overlay img { width:100%; max-width:none; }
+  .tag { position:absolute; top:10px; z-index:2; padding:4px 7px; border-radius:4px; color:#fff; background:#0009; font-size:12px; line-height:1.4; pointer-events:none; }
+  .tag.left { left:10px; } .tag.right { right:10px; }
+  .handle { position:absolute; top:0; bottom:0; left:50%; width:0; z-index:3; pointer-events:none; }
+  .knob { position:absolute; top:50%; left:0; transform:translate(-50%,-50%); width:32px; height:32px; display:grid; place-items:center; border-radius:50%; background:#fff; color:#333; border:1px solid #bbb; box-shadow:0 1px 5px #0002; font-size:17px; }
+  .range { display:block; width:100%; margin:9px 0 0; accent-color:var(--accent); cursor:ew-resize; }
+  .prompt { margin-top:10px; font-size:13px; line-height:1.55; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .prompt:empty { display:none; }
+  .prompt-label { font-weight:650; margin-bottom:2px; }
+  .prompt-body { color:inherit; }
+  .toolbar { display:flex; justify-content:flex-end; gap:8px; margin:8px 0; }
+  button, input, textarea { font:inherit; }
+  button { cursor:pointer; border:1px solid var(--line); border-radius:6px; background:transparent; color:inherit; padding:6px 9px; font-size:13px; }
+  .editor { border:1px solid var(--line); border-radius:8px; padding:12px; margin-top:10px; color:var(--text); background:Canvas; }
+  .editor h2 { margin:0 0 10px; font-size:15px; }
+  .fields { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .field { min-width:0; }
+  .field.full { grid-column:1/-1; }
+  .field label { display:block; font-size:12px; margin-bottom:4px; color:var(--muted); }
+  .field input[type=text], .field input[type=url], .field textarea { width:100%; padding:7px 8px; border:1px solid var(--line); border-radius:5px; background:transparent; color:inherit; }
+  .field textarea { min-height:72px; resize:vertical; }
+  .checks { display:flex; flex-wrap:wrap; gap:12px; margin:10px 0; font-size:13px; }
+  .checks label { display:flex; align-items:center; gap:5px; }
+  .hint { color:var(--muted); font-size:12px; line-height:1.5; margin:8px 0; }
+  .result { display:none; margin-top:10px; }
+  .result input { width:100%; margin:6px 0; padding:7px; border:1px solid var(--line); border-radius:5px; background:transparent; color:inherit; }
+  .error { color:#b42318; font-size:12px; margin-top:6px; }
+  @media(max-width:520px) { .fields { grid-template-columns:1fr; } .field.full { grid-column:auto; } .viewer { aspect-ratio:4/3; } }
+</style>
+</head>
+<body>
+<main class="app">
+  <div class="viewer" id="viewer" aria-label="圖片比較滑桿">
+    <img id="imgA" alt="原圖" hidden>
+    <div class="overlay" id="overlay"><img id="imgB" alt="生成結果" hidden></div>
+    <span class="tag left" id="tagA">原圖</span><span class="tag right" id="tagB">生成結果</span>
+    <div class="handle" id="handle"><span class="knob">↔</span></div>
+  </div>
+  <input class="range" id="range" type="range" min="0" max="100" value="50" aria-label="拖動比較兩張圖片">
+  <section id="prompts">
+    <div class="prompt" id="promptA"><div class="prompt-label" id="promptLabelA">提示詞 A</div><div class="prompt-body" id="promptBodyA"></div></div>
+    <div class="prompt" id="promptB"><div class="prompt-label" id="promptLabelB">提示詞 B</div><div class="prompt-body" id="promptBodyB"></div></div>
+  </section>
+  <div class="toolbar" id="toolbar"><button id="editBtn" type="button">編輯設定</button></div>
+  <section class="editor" id="editor" hidden>
+    <h2>比較項目設定</h2>
+    <div class="fields">
+      <div class="field"><label for="urlA">圖片 A 網址（原圖／左側）</label><input id="urlA" type="url" placeholder="https://.../image-a.png"></div>
+      <div class="field"><label for="urlB">圖片 B 網址（結果／右側）</label><input id="urlB" type="url" placeholder="https://.../image-b.png"></div>
+      <div class="field"><label for="labelA">圖片 A 標籤</label><input id="labelA" type="text" value="原圖" maxlength="40"></div>
+      <div class="field"><label for="labelB">圖片 B 標籤</label><input id="labelB" type="text" value="生成結果" maxlength="40"></div>
+      <div class="field"><label for="promptTitleA">提示詞 A 標題</label><input id="promptTitleA" type="text" value="提示詞（原圖）" maxlength="80"></div>
+      <div class="field"><label for="promptTitleB">提示詞 B 標題</label><input id="promptTitleB" type="text" value="提示詞（生成結果）" maxlength="80"></div>
+      <div class="field full"><label for="textA">提示詞 A</label><textarea id="textA" placeholder="可留空，不顯示提示詞"></textarea></div>
+      <div class="field full"><label for="textB">提示詞 B</label><textarea id="textB" placeholder="可留空，不顯示提示詞"></textarea></div>
+    </div>
+    <div class="checks">
+      <label><input id="showLabels" type="checkbox" checked> 顯示圖片標籤</label>
+      <label><input id="showPromptA" type="checkbox" checked> 顯示提示詞 A</label>
+      <label><input id="showPromptB" type="checkbox" checked> 顯示提示詞 B</label>
+      <label><input id="showEditor" type="checkbox"> 在嵌入頁保留編輯按鈕</label>
+    </div>
+    <p class="hint">若要讓 Notion 的讀者直接看到圖片，圖片網址必須能被外部瀏覽器讀取（HTTPS）。這個工具不會替你上傳圖片。提示詞與顯示選項會寫入產生的網址；請勿放入機密內容。</p>
+    <div class="toolbar"><button id="previewBtn" type="button">套用預覽</button><button id="linkBtn" type="button">取得嵌入連結</button></div>
+    <div class="result" id="result"><div class="field"><label for="shareUrl">嵌入網址</label><input id="shareUrl" readonly></div><div class="toolbar"><button id="copyBtn" type="button">複製網址</button></div><p class="hint">將網址部署到 GitHub Pages 後，在 Notion 輸入 /embed，貼上此網址即可。一般使用者開啟連結時只會看到比較內容，不會看到設定面板（除非勾選保留編輯按鈕）。</p></div>
+    <div class="error" id="error" role="status"></div>
+  </section>
+</main>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const params = new URLSearchParams(location.search);
+  const configKeys = ['a','b','la','lb','pta','ptb','pa','pb','labels','edit'];
+  const decode = (key, fallback='') => params.has(key) ? params.get(key) : fallback;
+  $('urlA').value = decode('a'); $('urlB').value = decode('b');
+  $('labelA').value = decode('la','原圖'); $('labelB').value = decode('lb','生成結果');
+  $('promptTitleA').value = decode('pta','提示詞（原圖）'); $('promptTitleB').value = decode('ptb','提示詞（生成結果）');
+  $('textA').value = decode('pa'); $('textB').value = decode('pb');
+  $('showLabels').checked = decode('labels','1') !== '0';
+  $('showPromptA').checked = decode('showA','1') !== '0'; $('showPromptB').checked = decode('showB','1') !== '0';
+  $('showEditor').checked = decode('edit','0') === '1';
+  const embedMode = params.get('view') === '1';
+  if (!embedMode || params.get('configure') === '1') $('editor').hidden = true;
+  $('editor').hidden = true;
+  $('toolbar').hidden = params.get('edit') !== '1' && embedMode;
+  if (params.get('edit') === '1' || params.get('configure') === '1' || !embedMode) $('toolbar').hidden = false;
+  if (params.get('configure') === '1' || !embedMode) $('editor').hidden = false;
+  function setImage(id, url, alt) {
+    const img = $(id);
+    img.hidden = !url;
+    img.alt = alt;
+    if (url) img.src = url; else img.removeAttribute('src');
+    img.onerror = () => { img.hidden = true; $('error').textContent = '有圖片無法載入，請確認圖片網址可公開讀取且為 HTTPS。'; };
+  }
+  function updateSlider() {
+    const v = Number($('range').value);
+    $('overlay').style.width = v + '%'; $('handle').style.left = v + '%';
+    const w = $('viewer').clientWidth;
+    $('imgB').style.width = w + 'px';
+  }
+  function apply() {
+    const a = $('urlA').value.trim(), b = $('urlB').value.trim();
+    const la = $('labelA').value.trim() || '圖片 A', lb = $('labelB').value.trim() || '圖片 B';
+    setImage('imgA', a, la); setImage('imgB', b, lb);
+    $('tagA').textContent = la; $('tagB').textContent = lb;
+    $('tagA').hidden = !$('showLabels').checked; $('tagB').hidden = !$('showLabels').checked;
+    $('promptLabelA').textContent = $('promptTitleA').value.trim() || '提示詞 A';
+    $('promptLabelB').textContent = $('promptTitleB').value.trim() || '提示詞 B';
+    $('promptBodyA').textContent = $('textA').value; $('promptBodyB').textContent = $('textB').value;
+    $('promptA').hidden = !$('showPromptA').checked || !$('textA').value.trim();
+    $('promptB').hidden = !$('showPromptB').checked || !$('textB').value.trim();
+    $('toolbar').hidden = !($('showEditor').checked || !embedMode);
+    updateSlider();
+  }
+  function buildUrl() {
+    const u = new URL(location.href); u.search = '';
+    const values = {view:'1', a:$('urlA').value.trim(), b:$('urlB').value.trim(), la:$('labelA').value, lb:$('labelB').value, pta:$('promptTitleA').value, ptb:$('promptTitleB').value, pa:$('textA').value, pb:$('textB').value, labels:$('showLabels').checked?'1':'0', showA:$('showPromptA').checked?'1':'0', showB:$('showPromptB').checked?'1':'0', edit:$('showEditor').checked?'1':'0'};
+    Object.entries(values).forEach(([k,v]) => { if (v !== '') u.searchParams.set(k,v); });
+    return u.toString();
+  }
+  $('editBtn').addEventListener('click', () => { $('editor').hidden = !$('editor').hidden; });
+  $('previewBtn').addEventListener('click', () => { $('error').textContent=''; apply(); });
+  $('linkBtn').addEventListener('click', () => {
+    $('error').textContent='';
+    if (!$('urlA').value.trim() || !$('urlB').value.trim()) { $('error').textContent='請先填入兩張圖片的 HTTPS 網址。'; return; }
+    $('shareUrl').value = buildUrl(); $('result').style.display='block';
+  });
+  $('copyBtn').addEventListener('click', async () => {
+    const val = $('shareUrl').value;
+    try { await navigator.clipboard.writeText(val); $('copyBtn').textContent='已複製'; }
+    catch { $('shareUrl').select(); document.execCommand('copy'); $('copyBtn').textContent='已複製'; }
+  });
+  $('range').addEventListener('input', updateSlider);
+  window.addEventListener('resize', updateSlider);
+  apply();
+})();
+</script>
+</body>
+</html>
