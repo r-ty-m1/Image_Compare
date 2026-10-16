@@ -10,8 +10,8 @@
   html, body { margin:0; padding:0; background:transparent !important; }
   body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color:var(--text); }
   .app { width:100%; margin:0; }
-  .viewer { position:relative; width:100%; aspect-ratio:16/9; overflow:hidden; user-select:none; touch-action:pan-y; background:transparent; cursor:ew-resize; }
-  .viewer img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; }
+  .viewer { position:relative; width:100%; aspect-ratio:3/4; overflow:hidden; user-select:none; -webkit-user-select:none; touch-action:pan-y; background:transparent; cursor:ew-resize; }
+  .viewer img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; pointer-events:none; -webkit-user-drag:none; user-drag:none; }
   .viewer img[hidden] { display:none; }
   .overlay { position:absolute; inset:0 auto 0 0; width:50%; overflow:hidden; border-right:1px solid #fff; }
   .overlay img { width:100%; max-width:none; }
@@ -41,7 +41,7 @@
   .result { display:none; margin-top:10px; }
   .result input { width:100%; margin:6px 0; padding:7px; border:1px solid var(--line); border-radius:5px; background:transparent; color:inherit; }
   .error { color:#b42318; font-size:12px; margin-top:6px; }
-  @media(max-width:520px) { .fields { grid-template-columns:1fr; } .field.full { grid-column:auto; } .viewer { aspect-ratio:4/3; } }
+  @media(max-width:520px) { .fields { grid-template-columns:1fr; } .field.full { grid-column:auto; } }
 </style>
 </head>
 <body>
@@ -63,6 +63,7 @@
     <div class="fields">
       <div class="field"><label for="urlA">圖片 A 網址（原圖／左側）</label><input id="urlA" type="url" placeholder="https://.../image-a.png"></div>
       <div class="field"><label for="urlB">圖片 B 網址（結果／右側）</label><input id="urlB" type="url" placeholder="https://.../image-b.png"></div>
+      <div class="field full"><label for="ratio">嵌入後圖片顯示比例</label><select id="ratio" style="width:100%;padding:7px 8px;border:1px solid var(--line);border-radius:5px;background:transparent;color:inherit"><option value="3:4">3:4（直式，適合目前圖片）</option><option value="4:5">4:5（直式）</option><option value="9:16">9:16（手機直式）</option><option value="1:1">1:1（正方形）</option><option value="4:3">4:3（橫式）</option><option value="16:9">16:9（寬螢幕）</option></select></div>
       <div class="field"><label for="labelA">圖片 A 標籤</label><input id="labelA" type="text" value="原圖" maxlength="40"></div>
       <div class="field"><label for="labelB">圖片 B 標籤</label><input id="labelB" type="text" value="生成結果" maxlength="40"></div>
       <div class="field"><label for="promptTitleA">提示詞 A 標題</label><input id="promptTitleA" type="text" value="提示詞（原圖）" maxlength="80"></div>
@@ -89,6 +90,7 @@
   const configKeys = ['a','b','la','lb','pta','ptb','pa','pb','labels','edit'];
   const decode = (key, fallback='') => params.has(key) ? params.get(key) : fallback;
   $('urlA').value = decode('a'); $('urlB').value = decode('b');
+  $('ratio').value = ['3:4','4:5','9:16','1:1','4:3','16:9'].includes(decode('r','3:4')) ? decode('r','3:4') : '3:4';
   $('labelA').value = decode('la','原圖'); $('labelB').value = decode('lb','生成結果');
   $('promptTitleA').value = decode('pta','提示詞（原圖）'); $('promptTitleB').value = decode('ptb','提示詞（生成結果）');
   $('textA').value = decode('pa'); $('textB').value = decode('pb');
@@ -107,6 +109,8 @@
     img.onerror = () => { img.hidden = true; $('error').textContent = '有圖片無法載入，請確認圖片網址可公開讀取且為 HTTPS。'; };
   }
   function updateSlider() {
+    const ratio = $('ratio').value || '3:4';
+    $('viewer').style.aspectRatio = ratio.replace(':', ' / ');
     const v = Number($('range').value);
     $('overlay').style.width = v + '%'; $('handle').style.left = v + '%';
     const w = $('viewer').clientWidth;
@@ -128,7 +132,7 @@
   }
   function buildUrl() {
     const u = new URL(location.href); u.search = '';
-    const values = {view:'1', a:$('urlA').value.trim(), b:$('urlB').value.trim(), la:$('labelA').value, lb:$('labelB').value, pta:$('promptTitleA').value, ptb:$('promptTitleB').value, pa:$('textA').value, pb:$('textB').value, labels:$('showLabels').checked?'1':'0', showA:$('showPromptA').checked?'1':'0', showB:$('showPromptB').checked?'1':'0', edit:$('showEditor').checked?'1':'0'};
+    const values = {view:'1', r:$('ratio').value, a:$('urlA').value.trim(), b:$('urlB').value.trim(), la:$('labelA').value, lb:$('labelB').value, pta:$('promptTitleA').value, ptb:$('promptTitleB').value, pa:$('textA').value, pb:$('textB').value, labels:$('showLabels').checked?'1':'0', showA:$('showPromptA').checked?'1':'0', showB:$('showPromptB').checked?'1':'0', edit:$('showEditor').checked?'1':'0'};
     Object.entries(values).forEach(([k,v]) => { if (v !== '') u.searchParams.set(k,v); });
     return u.toString();
   }
@@ -145,6 +149,7 @@
     catch { $('shareUrl').select(); document.execCommand('copy'); $('copyBtn').textContent='已複製'; }
   });
   $('range').addEventListener('input', updateSlider);
+  $('ratio').addEventListener('change', updateSlider);
   // Allow dragging the divider directly over the image, not just the range control below.
   let dragging = false;
   function setFromPointer(event) {
@@ -155,8 +160,8 @@
     updateSlider();
   }
   $('viewer').addEventListener('pointerdown', event => {
-    dragging = true;
     if (event.pointerType === 'mouse' && event.button !== 0) return;
+    dragging = true;
     $('viewer').setPointerCapture?.(event.pointerId);
     setFromPointer(event);
   });
