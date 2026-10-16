@@ -197,7 +197,11 @@
       if (response.status === 404) throw new Error(`找不到儲存庫或分支（${detail}）。請確認帳號、儲存庫名稱與分支。`);
       throw new Error(`上傳 ${file.name} 失敗：${detail}`);
     }
-    return data.content?.download_url || `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path.split('/').map(encodeURIComponent).join('/')}`;
+    // Build a predictable public HTTPS URL from the uploaded path instead of relying on
+    // GitHub's optional download_url field, which may be absent in some responses.
+    const publicPath = path.split('/').map(encodeURIComponent).join('/');
+    const publicBranch = branch.split('/').map(encodeURIComponent).join('/');
+    return `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${publicBranch}/${publicPath}`;
   }
   $('uploadBtn').addEventListener('click', async () => {
     const owner = $('ghOwner').value.trim(), repo = $('ghRepo').value.trim(), token = $('ghToken').value.trim();
@@ -214,12 +218,20 @@
         const file = $(fileId).files[0];
         $('uploadStatus').textContent = `正在上傳圖片 ${side}：${file.name}…`;
         const url = await uploadToGitHub(file, token, owner, repo, branch, folder);
+        // Write the URL immediately after each successful upload, then refresh the preview.
         $(urlId).value = url;
+        apply();
+        $('uploadStatus').textContent += `\n圖片 ${side} 上傳完成，網址已填入：\n${url}`;
         $(fileId).value = '';
-        $('uploadStatus').textContent += `\n圖片 ${side} 上傳完成。`;
       }
       apply();
-      $('uploadStatus').textContent += '\n已自動填入圖片網址。請確認預覽正常，再取得嵌入連結。';
+      if ($('urlA').value.trim() && $('urlB').value.trim()) {
+        $('shareUrl').value = buildUrl();
+        $('result').style.display = 'block';
+        $('uploadStatus').textContent += '\n兩張圖片網址已就緒，嵌入連結也已產生；請確認預覽正常後複製連結。';
+      } else {
+        $('uploadStatus').textContent += '\n圖片網址已填入。另一張圖片也設定完成後，即可取得嵌入連結。';
+      }
     } catch (error) {
       $('uploadStatus').textContent = error?.message || '上傳失敗，請檢查網路與 GitHub 設定。';
     } finally {
