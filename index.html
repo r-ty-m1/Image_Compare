@@ -79,6 +79,7 @@
   .checks { display:flex; flex-wrap:wrap; gap:8px 16px; margin:12px 0; font-size:13px; }
   .checks label, .remember { display:flex; align-items:center; gap:6px; cursor:pointer; }
   .remember { margin-top:12px; font-size:13px; }
+  .hint.ok { color:var(--accent); } .hint.err { color:var(--error); }
   .hint { color:var(--muted); font-size:12px; line-height:1.5; font-weight:500; margin:8px 0; }
   .result { display:none; margin-top:12px; }
   .result input { margin:6px 0; }
@@ -115,8 +116,8 @@
   <section class="editor" id="editor" hidden>
     <h2>比較項目設定</h2>
     <div class="fields">
-      <div class="field"><label for="urlA">圖片 A 網址（原圖／左側）</label><input id="urlA" type="url" placeholder="上傳後自動填入，或貼上 HTTPS 網址"></div>
-      <div class="field"><label for="urlB">圖片 B 網址（結果／右側）</label><input id="urlB" type="url" placeholder="上傳後自動填入，或貼上 HTTPS 網址"></div>
+      <div class="field"><label for="urlA">圖片 A 網址（原圖／左側）</label><input id="urlA" type="text" placeholder="上傳後自動填入，或貼上圖片網址／GitHub 檔案網址／路徑"><div class="hint" id="urlHintA" style="margin:6px 0 0"></div></div>
+      <div class="field"><label for="urlB">圖片 B 網址（結果／右側）</label><input id="urlB" type="text" placeholder="上傳後自動填入，或貼上圖片網址／GitHub 檔案網址／路徑"><div class="hint" id="urlHintB" style="margin:6px 0 0"></div></div>
       <div class="field full"><label for="ratio">嵌入後圖片顯示比例</label><select id="ratio"><option value="3:4">3:4（直式）</option><option value="4:5">4:5（直式）</option><option value="9:16">9:16（手機直式）</option><option value="1:1">1:1（正方形）</option><option value="4:3">4:3（橫式）</option><option value="16:9">16:9（寬螢幕）</option></select><div class="hint" id="ratioHint" style="margin:6px 0 0"></div></div>
       <div class="field"><label for="labelA">圖片 A 標籤</label><input id="labelA" type="text" value="Before" maxlength="40"></div>
       <div class="field"><label for="labelB">圖片 B 標籤</label><input id="labelB" type="text" value="After" maxlength="40"></div>
@@ -237,6 +238,41 @@
     const [w, h] = await readFileSize(f); autoRatio(w, h, `圖片 B 檔案`); ratioTouched = false;
   });
 
+  /* ---------- 圖片網址自動轉換 ---------- */
+  const safeDecode = t => { try { return decodeURIComponent(t); } catch (e) { return t; } };
+  function repoParts() {
+    let owner = $('ghOwner').value.trim(), repo = $('ghRepo').value.trim();
+    const m = `${owner}/${repo}`.match(/github\.com\/([^/\s]+)\/([^/\s#?]+)/i);
+    if (m) { owner = m[1]; repo = m[2]; }
+    return { owner: owner.replace(/^\/+|\/+$/g, '').split('/')[0], repo: repo.replace(/\.git$/i, '').replace(/^\/+|\/+$/g, '') };
+  }
+  // 支援：GitHub 的 blob／raw 網址（Copy permalink）與儲存庫內的相對路徑（Copy path）
+  function normalizeImageUrl(input) {
+    const v = input.trim();
+    if (!v) return { url: v };
+    const gh = v.match(/^https?:\/\/(?:www\.)?github\.com\/([^/]+)\/([^/]+)\/(?:blob|raw)\/([^?#]+)/i);
+    if (gh) return { url: `https://raw.githubusercontent.com/${gh[1]}/${gh[2]}/${gh[3]}`, note: '✔ 已將 GitHub 檔案網址轉換為可用的圖片網址。' };
+    if (/^[a-z][a-z0-9+.-]*:/i.test(v) || v.startsWith('//')) return { url: v };      // 已是完整網址
+    const { owner, repo } = repoParts();
+    if (!owner || !repo) return { url: v, error: '這看起來是儲存庫內的路徑。請先在下方填入 GitHub 帳號與儲存庫名稱，才能轉成完整網址。' };
+    const path = v.replace(/^\.?\/+/, '').split('?')[0].split('#')[0].split('/').map(seg => encodeURIComponent(safeDecode(seg))).join('/');
+    const ref = ($('ghBranch').value.trim() || 'HEAD').split('/').map(encodeURIComponent).join('/');   // HEAD＝儲存庫預設分支
+    return { url: `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${ref}/${path}`, note: '✔ 已依下方的 GitHub 設定，將路徑轉換為完整圖片網址。' };
+  }
+  function normalizeField(side) {
+    const input = $('url' + side), hint = $('urlHint' + side);
+    const r = normalizeImageUrl(input.value);
+    hint.className = 'hint'; hint.textContent = '';
+    if (r.error) { hint.textContent = r.error; hint.classList.add('err'); return false; }
+    if (r.url !== input.value.trim()) { input.value = r.url; hint.textContent = r.note; hint.classList.add('ok'); return true; }
+    return false;
+  }
+  ['A', 'B'].forEach(side => {
+    const handle = () => { const changed = normalizeField(side); if (changed) { apply(true); refreshShare(); } };
+    $('url' + side).addEventListener('change', handle);
+    $('url' + side).addEventListener('paste', () => setTimeout(handle, 0));
+  });
+
   /* ---------- 圖片與預覽 ---------- */
   function setImage(id, url, alt) {
     const img = $(id);
@@ -287,7 +323,8 @@
     updateSlider();
   }
 
-  function apply() {
+  function apply(skipNormalize) {
+    if (!skipNormalize) { normalizeField('A'); normalizeField('B'); }
     const a = $('urlA').value.trim(), b = $('urlB').value.trim();
     const la = $('labelA').value.trim() || 'Before', lb = $('labelB').value.trim() || 'After';
     setImage('imgA', a, la); setImage('imgB', b, lb);
